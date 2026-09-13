@@ -1,4 +1,3 @@
-import { WorkspaceError } from "bb-environment-provider-host/git";
 import { describe, expect, it } from "vitest";
 import { deriveRepoDirName } from "./paths.js";
 
@@ -16,8 +15,27 @@ describe("deriveRepoDirName", () => {
       "/Users/me/code/Hello-World.git",
       "Hello-World",
     ],
+    [
+      "name with spaces",
+      "/Users/me/bb-repro/Repo With Space",
+      "Repo-With-Space",
+    ],
+    [
+      "runs of disallowed characters",
+      "/Users/me/Obsidian Vault (iCloud) ",
+      "Obsidian-Vault-iCloud",
+    ],
+    ["non-ASCII prefix", "/Users/me/Проект docs", "docs"],
+    [
+      "leading dash (could be interpreted as flag)",
+      "/tmp/-dangerous",
+      "dangerous",
+    ],
+    ["hidden directory", "/Users/me/.dotfiles", ".dotfiles"],
   ])("derives %s", (_label, input, expected) => {
-    expect(deriveRepoDirName(input)).toBe(expected);
+    const derived = deriveRepoDirName(input);
+    expect(derived).toBe(expected);
+    expect(deriveRepoDirName(derived)).toBe(expected);
   });
 
   it.each([
@@ -26,13 +44,9 @@ describe("deriveRepoDirName", () => {
     ["bare .git", "/Users/me/code/.git"],
     ["parent traversal", "/Users/me/code/.."],
     ["current dir", "/Users/me/code/."],
-    ["leading dash (could be interpreted as flag)", "/tmp/-dangerous"],
-    ["whitespace in name", "/tmp/my repo"],
-    [
-      "url with query parameter encoded into basename",
-      "https://host/foo/bar.git;param=x",
-    ],
-  ])("rejects %s", (_label, input) => {
-    expect(() => deriveRepoDirName(input)).toThrowError(WorkspaceError);
+    ["only disallowed characters", "/Users/me/Проект"],
+    ["only dashes", "/tmp/---"],
+  ])("falls back to repo for %s", (_label, input) => {
+    expect(deriveRepoDirName(input)).toBe("repo");
   });
 });

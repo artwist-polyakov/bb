@@ -24,6 +24,9 @@ branch. Under the hood it's `git worktree add` plus some bookkeeping:
 - It lives at
   `<BB_DATA_DIR>/plugins/environment-git-worktree/host-data/worktrees/<thread-id>/<repo-name>`
   — for example, `~/.bb/plugins/environment-git-worktree/host-data/worktrees/thr_abc.../myrepo`.
+  `<repo-name>` is the checkout's folder name with any character outside
+  `A-Za-z0-9._-` replaced by a hyphen (`Repo With Space` becomes
+  `Repo-With-Space`); a name with nothing left falls back to `repo`.
 - Once every thread using the environment is deleted, bb cleans the worktree up
   (`git worktree remove --force`). Archiving the last thread starts a
   five-minute grace period instead, so unarchiving within it keeps the

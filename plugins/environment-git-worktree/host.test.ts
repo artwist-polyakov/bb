@@ -34,14 +34,14 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   return result.stdout;
 }
 
-async function createSourceRepository(): Promise<{
+async function createSourceRepository(repoDirName = "repo"): Promise<{
   root: string;
   sourcePath: string;
   dataDir: string;
 }> {
   const root = await mkdtemp(join(tmpdir(), "bb-worktree-plugin-"));
   temporaryRoots.push(root);
-  const sourcePath = join(root, "repo");
+  const sourcePath = join(root, repoDirName);
   const dataDir = join(root, "plugin-data");
   await execFileAsync("mkdir", ["-p", sourcePath, dataDir]);
   await git(sourcePath, "init", "--initial-branch=main");
@@ -163,6 +163,26 @@ describe("worktree host entry", () => {
     });
     if (result.status !== "created") throw new Error(result.message);
     expect(existsSync(join(result.path, "README.md"))).toBe(true);
+    await harness.experimental_dispose();
+  });
+
+  it("creates a worktree from a checkout whose folder name has spaces", async () => {
+    const { sourcePath, dataDir } =
+      await createSourceRepository("Repo With Space");
+    const harness = createHarness(dataDir);
+    const result = await harness.experimental_call(
+      "create",
+      createInput({
+        operationId: "spaced",
+        sourcePath,
+        pathKey: "thr_spaced",
+        branchName: "bb/spaced",
+      }),
+    );
+    expect(result).toMatchObject({
+      status: "created",
+      path: join(dataDir, "worktrees", "thr_spaced", "Repo-With-Space"),
+    });
     await harness.experimental_dispose();
   });
 

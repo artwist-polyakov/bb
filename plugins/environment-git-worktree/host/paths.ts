@@ -1,7 +1,7 @@
 import { WorkspaceError } from "bb-environment-provider-host/git";
 import path from "node:path";
 
-const REPO_DIR_NAME_PATTERN = /^[A-Za-z0-9._][A-Za-z0-9._-]*$/;
+const FALLBACK_REPO_DIR_NAME = "repo";
 
 export function deriveRepoDirName(sourcePath: string): string {
   const trimmed = sourcePath.replace(/\/+$/, "");
@@ -9,19 +9,13 @@ export function deriveRepoDirName(sourcePath: string): string {
   const candidate = basename.endsWith(".git")
     ? basename.slice(0, -".git".length)
     : basename;
-
-  if (
-    !candidate ||
-    candidate === "." ||
-    candidate === ".." ||
-    !REPO_DIR_NAME_PATTERN.test(candidate)
-  ) {
-    throw new WorkspaceError(
-      "invalid_source_path",
-      `Cannot derive repository directory name from source "${sourcePath}"`,
-    );
+  const slug = candidate
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (slug === "" || slug === "." || slug === "..") {
+    return FALLBACK_REPO_DIR_NAME;
   }
-  return candidate;
+  return slug;
 }
 
 export function resolveWorktreesRoot(dataDir: string): string {
