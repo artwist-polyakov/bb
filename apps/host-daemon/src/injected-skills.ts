@@ -25,7 +25,6 @@ const WINDOWS_RENAME_RETRY_BUDGET_MS = 5_000;
 const WINDOWS_TRANSIENT_RENAME_CODES = ["EPERM", "EACCES", "EBUSY"] as const;
 const SKILL_NAME_PATTERN = /^(?!.*--)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u;
 const MAX_STAGED_SKILL_FILES = 1_000;
-const MAX_STAGED_SKILL_BYTES = 10 * 1024 * 1024;
 const MAX_STAGED_SKILL_DEPTH = 24;
 export const EMPTY_SKILL_CATALOG_HASH = createHash("sha256")
   .update("bb-global-skills-v1-empty")
@@ -77,7 +76,6 @@ interface CollectedSkillTree {
   directories: CollectedSkillDirectory[];
   files: CollectedSkillFile[];
   source: HostDaemonInjectedSkillSource;
-  totalBytes: number;
 }
 
 interface CollectSkillTreeArgs {
@@ -105,7 +103,6 @@ interface WalkSkillTreeArgs {
 interface SkillTreeCollectionState {
   directories: CollectedSkillDirectory[];
   files: CollectedSkillFile[];
-  totalBytes: number;
 }
 
 interface StageTreeArgs {
@@ -298,11 +295,6 @@ async function walkSkillTree(args: WalkSkillTreeArgs): Promise<void> {
         `Skill tree exceeds max file count ${MAX_STAGED_SKILL_FILES}: ${args.rootPath}`,
       );
     }
-    if (args.state.totalBytes + entryStat.size > MAX_STAGED_SKILL_BYTES) {
-      throw new Error(
-        `Skill tree exceeds max byte count ${MAX_STAGED_SKILL_BYTES}: ${args.rootPath}`,
-      );
-    }
     const bytes = await fs.readFile(readPath);
     args.state.files.push({
       bytes,
@@ -310,7 +302,6 @@ async function walkSkillTree(args: WalkSkillTreeArgs): Promise<void> {
       mode: entryStat.mode & 0o777,
       relativePath,
     });
-    args.state.totalBytes += entryStat.size;
   }
 }
 
@@ -357,7 +348,6 @@ async function collectSkillDirectory(
   const state: SkillTreeCollectionState = {
     directories: [],
     files: [],
-    totalBytes: 0,
   };
   await walkSkillTree({
     boundaryPath: args.boundaryPath,
@@ -405,7 +395,6 @@ function toCollectedSkillTree(
     directories: state.directories,
     files: state.files,
     source,
-    totalBytes: state.totalBytes,
   };
 }
 
@@ -713,7 +702,6 @@ function decodeTreeEntryContent(
 function validatedTreeEntries(tree: HostDaemonSkillTree): CollectedSkillFile[] {
   const files: CollectedSkillFile[] = [];
   const paths = new Set<string>();
-  let totalBytes = 0;
   for (const entry of tree.entries) {
     if (
       entry.path.includes("\\") ||
@@ -729,15 +717,9 @@ function validatedTreeEntries(tree: HostDaemonSkillTree): CollectedSkillFile[] {
     }
     paths.add(entry.path);
     const bytes = decodeTreeEntryContent(entry.contentBase64, entry.path);
-    totalBytes += bytes.length;
     if (files.length + 1 > MAX_STAGED_SKILL_FILES) {
       throw new Error(
         `Skill tree exceeds max file count ${MAX_STAGED_SKILL_FILES}`,
-      );
-    }
-    if (totalBytes > MAX_STAGED_SKILL_BYTES) {
-      throw new Error(
-        `Skill tree exceeds max byte count ${MAX_STAGED_SKILL_BYTES}`,
       );
     }
     files.push({

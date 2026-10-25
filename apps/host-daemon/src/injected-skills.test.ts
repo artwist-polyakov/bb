@@ -96,6 +96,7 @@ function createDataDirSource(
 function createTreePayload(
   name: string,
   token = "tree bytes",
+  extraEntries: HostDaemonSkillTree["entries"] = [],
 ): HostDaemonSkillTree {
   const entries = [
     {
@@ -110,6 +111,7 @@ function createTreePayload(
       mode: 0o755,
       contentBase64: Buffer.from("#!/bin/sh\necho synced\n").toString("base64"),
     },
+    ...extraEntries,
   ];
   entries.sort((left, right) =>
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
@@ -231,6 +233,40 @@ describe("injected skill staging", () => {
     }
     expect(fetchSkillTree).toHaveBeenCalledTimes(1);
     expect(fetchSkillTree).toHaveBeenCalledWith(payload.treeHash);
+  });
+
+  it("stages a pulled tree whose supporting assets exceed 10 MiB", async () => {
+    const dataDir = await makeTempDir();
+    const asset = Buffer.alloc(11 * 1024 * 1024);
+    const payload = createTreePayload(
+      "asset-heavy",
+      "Use assets/example.bin as supporting material.",
+      [
+        {
+          path: "assets/example.bin",
+          mode: 0o644,
+          contentBase64: asset.toString("base64"),
+        },
+      ],
+    );
+
+    const staged = await stageInjectedSkillSources({
+      workspacePath: dataDir,
+      dataDir,
+      fetchSkillTree: async () => payload,
+      injectedSkillSources: [createTreeSource("asset-heavy", payload.treeHash)],
+    });
+
+    await expect(
+      lstat(
+        path.join(
+          requireSkillRoot(staged.skillRoots).path,
+          "asset-heavy",
+          "assets",
+          "example.bin",
+        ),
+      ).then((stat) => stat.size),
+    ).resolves.toBe(asset.length);
   });
 
   it.each([
