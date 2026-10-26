@@ -829,8 +829,12 @@ off. An experiment you set yourself keeps your value either way.
   open thread), Shift-click selects the visible range from the last clicked row,
   and a plain click, Cmd/Ctrl-click, Escape, or a click outside the sidebar
   clears the selection.
-  Right-clicking a selected row offers Mark read/unread, Pin/Unpin, Move to
-  section, and Archive for the whole selection. Dragging a selected row moves
+  Right-clicking a selected row offers Mark read/unread, Pin/Unpin,
+  Notifications, Move to section, Archive (Unarchive when every selected
+  thread is archived), and Delete for the whole selection. Archive and Delete
+  ask once for the whole selection, counting child threads that are not
+  selected, and act on the topmost selected threads; Archive skips the
+  question when the Archive confirmation setting is off. Dragging a selected row moves
   every selected thread onto a section, under a thread, or into Pinned, or drops
   them onto a composer as one mention per thread. Cmd/Ctrl-click still opens a
   thread in a split. Plugins read it with
@@ -841,6 +845,13 @@ off. An experiment you set yourself keeps your value either way.
   client refetching the latest window after every update. A missed push falls
   back to the delta request used when it is off. Open views follow a toggle
   live.
+- `unreadDividerAtAnswer` moves the NEW divider in an unread thread from the
+  first row after your read point to the answer of a turn that finished while
+  you were away: the turn's final assistant message, or the error that ended
+  it. The turn's tool calls and in-between notes stay above the divider. A
+  message that started a new turn keeps the divider above it, a turn that is
+  still running or has no answer keeps the old placement, and the divider never
+  lands on your own message. It applies the next time you open a thread.
 
 ## Thread Timeline Window
 

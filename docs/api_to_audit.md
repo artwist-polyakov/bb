@@ -83,9 +83,9 @@ provider, triggers): a keystroke in an open menu renders the provider and the
 composer once, and plain typing never runs the search. A query passed during
 render would have to reach the provider from an effect, a second render.
 Both report `refreshing` while earlier results show. The command search has
-no paging, since bb returns every match, and no prefetch call:
-`experimental_ComposerRoot` starts loading commands when focus enters the
-composer. A character is a mention trigger or a command trigger, never both;
+no paging, since bb returns every match, and no prefetch: commands load when
+the first command query arrives and report `loading` until they do, so
+focusing a composer costs no request. A character is a mention trigger or a command trigger, never both;
 when a plugin mention provider claims `$`, `$` opens the mention menu.
 Every type in the contract is public: mentions, attachments and history use
 the `useComposer()` shapes, and suggestions carry the mention to insert plus
@@ -951,7 +951,9 @@ on `sidebarMultiSelect`.
 `{ threads: { threadId, ancestorIds }[] }`, parent first up to the root,
 for every existing thread including archived and deleted ones, in one
 recursive primary-key query. First caller: push-notifications, so a parent's
-level follows the current tree.
+level follows the current tree. The thread list's Move to section for a
+multi-selection also reads it from the browser SDK to move only the topmost
+selected threads.
 
 Docs: `backend-sdk.md`.
 
@@ -989,6 +991,33 @@ Docs: `backend-sdk.md`.
    callers never need deleted ones. No event announces a hidden thread
    becoming visible, so a caller that skips hidden threads cannot refresh
    one when it appears; decide whether visibility changes need an event.
+
+## `bb.sdk.threads.experimental_listCascade`
+
+`POST /threads/cascade` with `{ threadIds, action }` (1–200 ids, `action`
+`"archive"` or `"delete"`) returns `{ threads: { threadId, cascadeThreadIds
+}[] }` for every existing, non-deleted thread: the visible threads that
+archiving or deleting it would also affect. Archive follows the same
+candidates `archive-all` archives (children, lifecycle dependents and hidden
+source threads) and omits threads already archived, so its count equals
+`childSummary`'s `unarchivedDescendantCount`. Delete follows the deletion
+tree (parent and lifecycle-owner links) and includes archived threads. Hidden,
+deleted and unknown threads are omitted. Core's archive and delete dialogs
+(`apps/app/src/lib/thread-selection-plan.ts`) read it to find the topmost
+selected threads and to count the threads that go with them, for one thread
+or a selection, so single and bulk dialogs count the same way.
+
+Docs: `backend-sdk.md`.
+
+**Audit before stabilizing.**
+
+1. **Per-thread cost.** Each id runs its own cascade walk. Decide whether a
+   batched recursive query is needed for large selections.
+2. **Shape.** Decide whether callers need the cascade's structure (which
+   thread pulled each one in) or counts alone, and whether `childSummary`
+   should be retired in its favor.
+3. **Actions.** Confirm `archive` and `delete` are the only cascading
+   actions worth previewing.
 
 ## `PluginSettingDescriptor.experimental_optionLabels`
 
@@ -2622,7 +2651,7 @@ Docs: `frontend-registration.md`, `frontend-components.md`.
    `[data-info-section]`, so a section that renders without
    `experimental_InfoSection` gets no separator. Confirm that is acceptable.
 
-## `app.slots.experimental_threadAction` / `experimental_useThreadActions` / `experimental_useThreadActionRegistrations` / `experimental_ThreadActionsMenu` / `experimental_ThreadActionsContextMenu` / `experimental_THREAD_ACTION_GROUPS` (`@get-bb/plugin-sdk/app`)
+## `app.slots.experimental_threadAction` / `PluginThreadActionRegistration.experimental_bulkItem` / `experimental_useThreadActions` / `experimental_useThreadActionRegistrations` / `experimental_ThreadActionsMenu` / `experimental_ThreadActionsContextMenu` (with `experimental_bulkThreads`) / `experimental_THREAD_ACTION_GROUPS` (`@get-bb/plugin-sdk/app`)
 
 A registration is `{ id, title, icon, group, order?, useData?, item }`.
 `useData` runs once per registration for the whole app and receives
@@ -2635,6 +2664,18 @@ for every menu and the quick-action picker. Thread-list registers Move to
 section, and push-notifications registers Notifications. The SDK test fake
 throws when a menu `trigger` drops its props and ref.
 
+`experimental_bulkItem` is an optional pure function of
+`{ threads, data, sdk, navigate }` (two or more selected threads in list
+order) returning one action for the whole selection, or null.
+`experimental_ThreadActionsContextMenu`'s optional `experimental_bulkThreads`
+(the selected targets) and `onEscapeKeyDown` turn the row's menu into the
+selection menu when it holds two or more threads: a "N threads selected"
+heading, every registration's bulk item in the same group order as the
+thread menu, then `inline`, with every selected id retained in `useData`'s
+`threadIds` while open. One component keeps a row to a single Radix menu, so
+a row joining or leaving a selection does not remount. The SDK test fake
+takes `threadBulkActions` for the entries it lists.
+
 **Core callers.** bb's own actions are `CORE_THREAD_ACTIONS`
 (`apps/app/src/lib/thread-actions/core-thread-actions.ts`), registered under
 the reserved `bb--core` owner. The header menu (`ThreadDetailView` →
@@ -2642,7 +2683,19 @@ the reserved `bb--core` owner. The header menu (`ThreadDetailView` →
 `ThreadArchiveCommandHandler` read the same registry, and the thread list's
 row menus and quick actions use the SDK exports. The contract table in
 `ThreadActionsMenu.test.tsx` runs every menu surface against the same
-registrations.
+registrations. Core's Mark read, Pin, Archive and Delete registrations carry
+the bulk items; Archive and Delete call `ThreadActionsProvider`'s
+`requestArchiveThreads` / `requestDeleteThreads`, which the single-thread
+`requestArchive` / `requestDelete` (and so every single-thread menu) also go
+through. Delete, for one thread or several, and archive for two or more plan
+the selection with `threads.experimental_listCascade`, confirm once with the
+count of unselected threads in the cascade (archive honors the confirmation
+setting), act on
+the topmost selected threads, and clean up panes and routes once; archive
+shares one Undo toast with `experimental_useArchiveEnvironmentThreads`. The
+thread list's multi-selection is the only caller of
+`experimental_bulkThreads`, and its Move to section and push-notifications'
+Notifications carry bulk items.
 
 Docs: `frontend-registration.md`.
 
@@ -2660,6 +2713,11 @@ Docs: `frontend-registration.md`.
 4. **Inline items.** `inline` exists for surface-specific entries that are not
    about a thread. Confirm it should stay a component prop rather than a
    registration.
+5. **Bulk shape.** Decide whether `experimental_bulkItem` should
+   stay a second function or `item` should take a target that is one thread
+   or several, whether selection menus need a dropdown or compact-drawer
+   variant beyond right-click and long-press, and whether a bulk item
+   should be able to report per-thread failures instead of one toast.
 
 ## `experimental_useArchiveEnvironmentThreads` (`@get-bb/plugin-sdk/app`)
 
@@ -3536,7 +3594,7 @@ field introduces no separate backend or headless side effect.
 - `experimental_useRpcQuery`, `experimental_useRpcKeyedQuery`, `experimental_useRpcMutation`, and `experimental_useRpcRefresh` use the core `@bb/query-tags` cache mechanism per client. Query state keeps previous data during refresh errors; consumers show an inline Retry using `refetch`. Successful reads clear the error. Keyed calls accept `{ keys }` and return a record containing every requested key; consumers share one observer per plugin/method and requests batch up to 200 keys. A pure `select` projection retains unchanged JSON subobjects across key and fetch-state changes, so default rows do not republish unchanged notification levels.
 - `ExperimentalRpcMutationState.pendingInputs` contains every in-flight input for that hook instance until the server acknowledges its write. Background rereads are excluded. `isPending` remains true while any input is pending. Core `useTaggedMutation` exposes the same state from TanStack's mutation cache. Stabilization requires hook-instance isolation, concurrent targets, failure cleanup, and pending feedback surviving row moves between groups.
 - `ExperimentalRpcMutationOptions.optimistic(input, cache)` predicts loaded cached values before the write. `cache.update(method, input, updater)` targets a plain read, and `cache.updateKey(method, key, updater)` targets one keyed row. `cache` is an `ExperimentalRpcOptimisticCache`. Pure updaters receive the currently visible value and return its prediction. An absent plain read is skipped; a keyed row that loads while the write is pending shows the prediction. Predictions are shared by every reader on that client. The core route mutation accepts the same core optimistic descriptors and uses the same `@bb/query-tags` implementation. Ui-preferences already updates its shared Jotai atoms optimistically, which remains unchanged.
-- Predictions remain over incoming reads until confirmed matched reads arrive, independently of mutation pending state. A rejected write rolls back its layer and surfaces the mutation error. An accepted write whose refresh fails keeps its prediction with the read error and Retry; a successful refresh replaces it. Later predictions and confirmed values are protected from older mutation settles and rollbacks. Inverted completion retains the later confirmed value until a subsequent fresh read can replace it. Keyed rows live in the `@bb/query-tags` keyed store: an accepted row prediction becomes the row's value, and only a read of that row that started after acceptance replaces it. Stabilization includes overlapping writes, external invalidation, refresh failures, plain/keyed targets and completion without stale flicker.
+- Predictions remain over incoming reads until confirmed matched reads arrive, independently of mutation pending state. A rejected write rolls back its layer and surfaces the mutation error. An accepted write whose refresh fails keeps its prediction with the read error and Retry; a successful refresh replaces it. Later predictions and confirmed values are protected from older mutation settles and rollbacks. Inverted completion retains the later confirmed value until a subsequent fresh read can replace it. Keyed rows live in the `@bb/query-tags` keyed store: a row prediction is never written into the stored row, and an accepted one stays until a read of that row that started after acceptance replaces it. Stabilization includes overlapping writes, external invalidation, refresh failures, plain/keyed targets and completion without stale flicker.
 - `defineRpcContract` accepts the core `ContractTagDeclarations`: `tags(input, output)`, `keyTags(key, value)`, and `invalidates(input, output)` receive validated values. Tags are in the RPC envelope; successful writes broadcast their invalidated tags and return `invalidated`. Tagged mutations resolve at write acknowledgement while matching active reads refresh in the background.
 - `bb.rpc.experimental_invalidate(tags)` requires nonempty tags; `experimental_invalidateAll()` refreshes all reads of that plugin, including untagged reads. Load, reload, disable and reconnect refresh plugin reads through the same cache path. Plugin changed messages are scoped to `{ kind: "plugin", pluginId }` subscribers; reconnect batches subscriptions and unknown targets are ignored.
 - Core uses the same tagged reads, invalidation and mutation implementation for UI preferences. Core keeps each thread once, in the same `@bb/query-tags` keyed store as plugin keyed rows, and derives thread detail, every thread list, search and sidebar navigation from it as keyed views. Every core thread write (pin and unpin through one batcher, read state, rename, section and parent moves, archive, unarchive, delete, stop, send status, environment rename) predicts on the entity with `optimisticKeyedUpdate` through `beginOptimisticMutation`, the path `cache.updateKey` uses, and confirms at the server's acknowledgement. One contract table (`@bb/query-tags/testing`) runs against core thread entities and plugin keyed rows; the pin hooks add `useTaggedMutation` with `meta.errorMessage` for core's error toast. Push-notifications thread levels are the first plugin caller; delivery retains `useRealtime`. The GitHub PR Status plugin's composer segment and Info row call `experimental_useRpcKeyedQuery` and `experimental_useRpcMutation` from their own slots. The retired sidebar pull request member calls the keyed read with an explicit `pluginId: "bb--github-pr-status"` outside any plugin slot, the call another plugin makes; the hooks require `pluginId` only when no plugin slot provides one. Stabilization requires additional plugin callers and validation of scoped tags, failures, reconnects, batching and sidebar observer counts. Cache seeding remains outside this API.

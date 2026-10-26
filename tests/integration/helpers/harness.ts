@@ -44,6 +44,7 @@ import { createAppUpdateService } from "../../../apps/server/src/services/system
 import { createCliCommandService } from "../../../apps/server/src/services/system/cli-command.js";
 import { createAppVersionService } from "../../../apps/server/src/services/system/app-version.js";
 import { createProviderNativeRootsCache } from "../../../apps/server/src/services/providers/native-roots.js";
+import { createProviderLiveCommandsCache } from "../../../apps/server/src/services/providers/provider-live-commands.js";
 import { createBbAppManagedConfigReloader } from "../../../apps/server/src/services/system/bb-app-managed-config.js";
 import { createNoopTelemetryService } from "../../../apps/server/src/services/system/telemetry.js";
 import { TerminalSessionLifecycle } from "../../../apps/server/src/services/terminals/terminal-session-lifecycle.js";
@@ -56,7 +57,10 @@ import { NotificationHub } from "../../../apps/server/src/ws/hub.js";
 import { WatchInterestCoordinator } from "../../../apps/server/src/ws/watch-interests.js";
 import { WorkspaceReadCaches } from "../../../apps/server/src/services/environments/workspace-read-cache.js";
 import { createPublicApiClient } from "@bb/server-contract";
-import { resolveProjectEnvCandidates } from "@bb/test-helpers";
+import {
+  killProcessesReferencingPath,
+  resolveProjectEnvCandidates,
+} from "@bb/test-helpers";
 import { waitForHostConnected } from "./assertions.js";
 import { createIntegrationFetch } from "./fetch.js";
 import { isNodeError, removePathWithRetry } from "./remove-path.js";
@@ -282,6 +286,7 @@ async function startIntegrationServer(
     bbAppManagedConfig,
     providerRegistry,
     providerNativeRoots: createProviderNativeRootsCache(),
+    providerLiveCommands: createProviderLiveCommandsCache(),
     pluginHostArtifacts,
     aiServices,
     config,
@@ -513,6 +518,7 @@ export async function createIntegrationHarness(
 
     await shutdownDaemon("integration-cleanup").catch(() => undefined);
     await server?.close().catch(() => undefined);
+    await killProcessesReferencingPath(tmpRoot);
     await removePathWithRetry(tmpRoot);
   }
 
